@@ -7,10 +7,8 @@
     "web"
   ],
   "scripts": {
-    "dev:mcp": "npm run -w mcp dev",
-    "build:mcp": "npm run -w mcp build",
     "start:mcp": "npm run -w mcp start",
-    "dev:middleware": "npm run -w middleware dev",
+    "start:middleware": "npm run -w middleware start",
     "dev:web": "npm run -w web dev"
   }
 }

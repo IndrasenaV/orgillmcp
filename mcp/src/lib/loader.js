@@ -2,26 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
 import stripJsonComments from "strip-json-comments";
-import { ProductRecord, DistributionCenterAvailability, DistributionCenterSpecific } from "../types.js";
-
-export interface CatalogState {
-  products: ProductRecord[];
-  productsByDealer: Map<string, ProductRecord[]>;
-  filesByDealer: Map<string, Set<string>>;
-}
 
 export class CatalogLoader {
-  private state: CatalogState = {
-    products: [],
-    productsByDealer: new Map(),
-    filesByDealer: new Map()
-  };
-
-  getState(): CatalogState {
-    return this.state;
-  }
-
-  clear(): void {
+  constructor() {
     this.state = {
       products: [],
       productsByDealer: new Map(),
@@ -29,7 +12,19 @@ export class CatalogLoader {
     };
   }
 
-  async loadFiles(paths: string[], options?: { dealerId?: string; inferDealerFromFilename?: boolean }): Promise<number> {
+  getState() {
+    return this.state;
+  }
+
+  clear() {
+    this.state = {
+      products: [],
+      productsByDealer: new Map(),
+      filesByDealer: new Map()
+    };
+  }
+
+  async loadFiles(paths, options) {
     const patterns = paths.map((p) => path.resolve(p));
     const files = await fg(patterns, { onlyFiles: true, unique: true, dot: false });
     let loaded = 0;
@@ -45,33 +40,32 @@ export class CatalogLoader {
     return loaded;
   }
 
-  private resolveDealerId(filePath: string, dealerId?: string, inferFromFilename: boolean = true): string | undefined {
+  resolveDealerId(filePath, dealerId, inferFromFilename = true) {
     if (dealerId) return dealerId;
     if (!inferFromFilename) return undefined;
-    // Heuristic: products-<dealer>-*.json(l)
     const base = path.basename(filePath);
     const m = base.match(/products-([A-Za-z0-9_-]+)-/);
     if (m) return m[1];
     return undefined;
   }
 
-  private addProduct(product: ProductRecord): void {
+  addProduct(product) {
     this.state.products.push(product);
     const dealerId = product.dealerId ?? "unknown";
     if (!this.state.productsByDealer.has(dealerId)) {
       this.state.productsByDealer.set(dealerId, []);
     }
-    this.state.productsByDealer.get(dealerId)!.push(product);
+    this.state.productsByDealer.get(dealerId).push(product);
   }
 
-  private trackFile(dealerId: string, filePath: string): void {
+  trackFile(dealerId, filePath) {
     if (!this.state.filesByDealer.has(dealerId)) {
       this.state.filesByDealer.set(dealerId, new Set());
     }
-    this.state.filesByDealer.get(dealerId)!.add(filePath);
+    this.state.filesByDealer.get(dealerId).add(filePath);
   }
 
-  private async readAnyJsonLike(file: string, dealerId?: string): Promise<ProductRecord[]> {
+  async readAnyJsonLike(file, dealerId) {
     const ext = path.extname(file).toLowerCase();
     if (ext === ".jsonl" || ext === ".ndjson" || ext === ".jsonlines") {
       return this.readJsonLines(file, dealerId);
@@ -79,10 +73,10 @@ export class CatalogLoader {
     return this.readJsonArray(file, dealerId);
   }
 
-  private async readJsonLines(file: string, dealerId?: string): Promise<ProductRecord[]> {
+  async readJsonLines(file, dealerId) {
     const content = await fs.promises.readFile(file, "utf8");
     const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    const records: ProductRecord[] = [];
+    const records = [];
     for (const line of lines) {
       const obj = JSON.parse(stripJsonComments(line));
       const normalized = this.normalizeProduct(obj, dealerId, file);
@@ -91,14 +85,14 @@ export class CatalogLoader {
     return records;
   }
 
-  private async readJsonArray(file: string, dealerId?: string): Promise<ProductRecord[]> {
+  async readJsonArray(file, dealerId) {
     const content = await fs.promises.readFile(file, "utf8");
     const data = JSON.parse(stripJsonComments(content));
-    const arr: unknown[] = Array.isArray(data) ? data : [data];
-    return arr.map((obj) => this.normalizeProduct(obj as Record<string, unknown>, dealerId, file));
+    const arr = Array.isArray(data) ? data : [data];
+    return arr.map((obj) => this.normalizeProduct(obj, dealerId, file));
   }
 
-  private normalizeProduct(raw: Record<string, unknown>, dealerId: string | undefined, sourceFile: string): ProductRecord {
+  normalizeProduct(raw, dealerId, sourceFile) {
     const name = this.extractLocaleMap(raw["name"]);
     const description = this.extractLocaleMap(raw["description"]);
     const attributes = this.extractAttributes(raw["attributes"]);
@@ -123,31 +117,29 @@ export class CatalogLoader {
     };
   }
 
-  private optionalString(v: unknown): string | null {
+  optionalString(v) {
     if (v === undefined || v === null) return null;
     return String(v);
   }
 
-  private extractLocaleMap(v: unknown): Record<string, string> | undefined {
-    // Supports input as [{locale: "en", value: "..."}, ...] or string
+  extractLocaleMap(v) {
     if (!v) return undefined;
     if (typeof v === "string") {
       return { en: v };
     }
     if (Array.isArray(v)) {
-      const out: Record<string, string> = {};
+      const out = {};
       for (const item of v) {
         if (item && typeof item === "object" && "locale" in item && "value" in item) {
-          const loc = String((item as any).locale ?? "en");
-          out[loc] = String((item as any).value ?? "");
+          const loc = String(item.locale ?? "en");
+          out[loc] = String(item.value ?? "");
         }
       }
       return Object.keys(out).length ? out : undefined;
     }
     if (typeof v === "object") {
-      // already a map
-      const out: Record<string, string> = {};
-      for (const [k, val] of Object.entries(v as any)) {
+      const out = {};
+      for (const [k, val] of Object.entries(v)) {
         out[k] = String(val);
       }
       return out;
@@ -155,43 +147,42 @@ export class CatalogLoader {
     return undefined;
   }
 
-  private extractAttributes(v: unknown): Record<string, unknown> | undefined {
-    // In sample, attributes is [{ templateSlug, templateAttributes: [{fieldSlug, type, value}, ...]}]
+  extractAttributes(v) {
     if (!v || !Array.isArray(v)) return undefined;
-    const out: Record<string, unknown> = {};
+    const out = {};
     for (const group of v) {
       if (!group || typeof group !== "object") continue;
-      const templateAttributes = (group as any).templateAttributes;
+      const templateAttributes = group.templateAttributes;
       if (!Array.isArray(templateAttributes)) continue;
       for (const attr of templateAttributes) {
         if (!attr || typeof attr !== "object") continue;
-        const fieldSlug = String((attr as any).fieldSlug ?? "");
-        const value = (attr as any).value;
+        const fieldSlug = String(attr.fieldSlug ?? "");
+        const value = attr.value;
         out[fieldSlug] = value;
       }
     }
     return Object.keys(out).length ? out : undefined;
   }
 
-  private extractDcAvailability(attributes?: Record<string, unknown>): DistributionCenterAvailability | undefined {
+  extractDcAvailability(attributes) {
     if (!attributes) return undefined;
     const raw = attributes["dc_availability"];
     if (!raw) return undefined;
     try {
       const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      return parsed as DistributionCenterAvailability;
+      return parsed;
     } catch {
       return undefined;
     }
   }
 
-  private extractDcSpecific(attributes?: Record<string, unknown>): DistributionCenterSpecific | undefined {
+  extractDcSpecific(attributes) {
     if (!attributes) return undefined;
     const raw = attributes["dc_specific"];
     if (!raw) return undefined;
     try {
       const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      return parsed as DistributionCenterSpecific;
+      return parsed;
     } catch {
       return undefined;
     }

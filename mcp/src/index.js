@@ -4,13 +4,7 @@ import { z } from "zod";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CatalogLoader } from "./lib/loader.js";
-import {
-  LoadFilesInputSchema,
-  SearchProductsInputSchema,
-  ProductRecord,
-  DealerSummary,
-  CatalogSummary
-} from "./types.js";
+import { LoadFilesInputSchema, SearchProductsInputSchema } from "./types.js";
 import { filterProducts, summarizeDistributionCenters, summarizeStatuses } from "./lib/search.js";
 
 const loader = new CatalogLoader();
@@ -19,14 +13,13 @@ const server = new McpServer({
   version: "0.1.0"
 });
 
-function ok(result: unknown) {
+function ok(result) {
   return {
     content: [{ type: "text", text: JSON.stringify(result) }],
     structuredContent: result
   };
 }
 
-// Tool: loadFiles
 server.registerTool("loadFiles", {
   description:
     "Load one or more JSON/JSONL files into memory. Accepts glob patterns. Dealer can be inferred from filename 'products-<dealer>-*.json(l)'.",
@@ -43,7 +36,6 @@ server.registerTool("loadFiles", {
   return ok({ loaded: count });
 });
 
-// Tool: listDealers
 server.registerTool("listDealers", {
   description: "List dealer IDs loaded in memory.",
   inputSchema: z.object({})
@@ -53,7 +45,6 @@ server.registerTool("listDealers", {
   return ok({ dealers });
 });
 
-// Tool: getDealerInfo
 server.registerTool("getDealerInfo", {
   description:
     "Get high-level dealer summary including product count, statuses, distribution centers and source files.",
@@ -66,7 +57,7 @@ server.registerTool("getDealerInfo", {
   const products = st.productsByDealer.get(dealerId) ?? [];
   const statuses = summarizeStatuses(products);
   const dcCounts = summarizeDistributionCenters(products);
-  const ds: DealerSummary = {
+  const ds = {
     dealerId,
     productCount: products.length,
     statuses,
@@ -76,7 +67,6 @@ server.registerTool("getDealerInfo", {
   return ok(ds);
 });
 
-// Tool: getDealerProductCount
 server.registerTool("getDealerProductCount", {
   description: "Return total product count for the specified dealer.",
   inputSchema: z.object({
@@ -89,7 +79,6 @@ server.registerTool("getDealerProductCount", {
   return ok({ dealerId, count });
 });
 
-// Tool: getProductBySku
 server.registerTool("getProductBySku", {
   description: "Get a single product by SKU. Optionally filter by dealerId.",
   inputSchema: z.object({
@@ -99,7 +88,7 @@ server.registerTool("getProductBySku", {
 }, async (args) => {
   const { sku, dealerId } = z.object({ sku: z.string(), dealerId: z.string().optional() }).parse(args);
   const st = loader.getState();
-  let pool: ProductRecord[] = st.products;
+  let pool = st.products;
   if (dealerId) {
     pool = st.productsByDealer.get(dealerId) ?? [];
   }
@@ -107,7 +96,6 @@ server.registerTool("getProductBySku", {
   return ok({ product: found ?? null });
 });
 
-// Tool: searchProducts
 server.registerTool("searchProducts", {
   description:
     "Flexible search by text and filters. Filters: dealerId, sku, mpn, upc, status, dcCode, region (US|CA). Supports pagination.",
@@ -126,7 +114,6 @@ server.registerTool("searchProducts", {
   });
 });
 
-// Tool: getDistributionCenters
 server.registerTool("getDistributionCenters", {
   description:
     "List distribution centers observed in data, with counts of how many products are available per DC. Optionally filter by dealer.",
@@ -141,20 +128,19 @@ server.registerTool("getDistributionCenters", {
   return ok(dcCounts);
 });
 
-// Tool: summarizeCatalog
 server.registerTool("summarizeCatalog", {
   description:
     "High-level analytics summary: totals by dealer, by status, and by distribution center. Useful for LLM planning.",
   inputSchema: z.object({})
 }, async () => {
   const st = loader.getState();
-  const byDealer: Record<string, number> = {};
+  const byDealer = {};
   for (const [dealer, list] of st.productsByDealer.entries()) {
     byDealer[dealer] = list.length;
   }
   const byStatus = summarizeStatuses(st.products);
   const byDc = summarizeDistributionCenters(st.products);
-  const summary: CatalogSummary = {
+  const summary = {
     totalProducts: st.products.length,
     byDealer,
     byStatus,
@@ -164,23 +150,19 @@ server.registerTool("summarizeCatalog", {
   return ok(summary);
 });
 
-// Tool: listLoadedFiles
 server.registerTool("listLoadedFiles", {
   description: "List all files that have been loaded, grouped by dealer.",
   inputSchema: z.object({})
 }, async () => {
   const st = loader.getState();
-  const files: Record<string, string[]> = {};
+  const files = {};
   for (const [dealer, set] of st.filesByDealer.entries()) {
     files[dealer] = Array.from(set);
   }
   return ok(files);
 });
 
-// Start the server
 async function main() {
-  // If running as a standalone process, optionally preload the default data directory
-  // This is optional; normally the client calls loadFiles.
   const envGlobs = (process.env.PRELOAD_GLOBS ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -195,19 +177,15 @@ async function main() {
   const globs = envGlobs.length ? envGlobs : defaultGlobs;
   try {
     const loaded = await loader.loadFiles(globs, { inferDealerFromFilename: true });
-    // eslint-disable-next-line no-console
     console.error(`[orgill-product-mcp-server] Preloaded ${loaded} products from ${globs.join(", ")}`);
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error("[orgill-product-mcp-server] Preload failed:", e);
   }
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  // Keep process alive; stdio transport lifecycle is managed by the client.
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
   console.error("Fatal error:", err);
   process.exit(1);
 });

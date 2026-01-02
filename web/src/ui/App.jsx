@@ -1,9 +1,7 @@
 import React, { useState } from "react";
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
-
 export function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState([
     { role: "assistant", content: "Ask me about products, dealers, or distribution centers." }
   ]);
   const [input, setInput] = useState("");
@@ -24,7 +22,7 @@ export function App() {
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || "Unknown error");
       setMessages((m) => [...m, { role: "assistant", content: json.answer }]);
-    } catch (e: any) {
+    } catch (e) {
       setMessages((m) => [
         ...m,
         { role: "assistant", content: `Sorry, something went wrong: ${e?.message || String(e)}` }
@@ -34,7 +32,7 @@ export function App() {
     }
   }
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+  function onKeyDown(e) {
     if (e.key === "Enter") send();
   }
 

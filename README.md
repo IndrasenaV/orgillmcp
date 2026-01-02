@@ -20,6 +20,20 @@ cd /Users/indra/orgillmcp
 npm install
 ```
 
+### Environment
+Create a `.env` at the repo root (recommended) by copying the example and filling values:
+
+```bash
+cp .env.example .env
+```
+
+Required:
+- `OPENAI_API_KEY`: your OpenAI API key
+
+Optional:
+- `OPENAI_MODEL` (default `gpt-4o-mini`)
+- `PRELOAD_GLOBS` to customize MCP preload patterns
+
 ### Run (dev)
 - MCP server:
   ```bash
@@ -28,9 +42,8 @@ npm install
   # Customize: export PRELOAD_GLOBS="/full/path/*.jsonl"
   ```
 
-- Middleware (requires OpenAI API key):
+- Middleware (reads OpenAI key from .env):
   ```bash
-  export OPENAI_API_KEY=sk-...
   npm run dev:middleware
   # Serves on http://localhost:4000
   ```

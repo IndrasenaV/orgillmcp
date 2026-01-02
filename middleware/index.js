@@ -3,6 +3,21 @@ import cors from "cors";
 import { z } from "zod";
 import OpenAI from "openai";
 import { OrgillMcpClient } from "./mcpClient.js";
+import dotenv from "dotenv";
+import path from "node:path";
+import fs from "node:fs";
+
+(() => {
+  const rootEnv = path.resolve(__dirname, "..", ".env");
+  const localEnv = path.resolve(__dirname, ".env");
+  if (fs.existsSync(rootEnv)) {
+    dotenv.config({ path: rootEnv });
+  } else if (fs.existsSync(localEnv)) {
+    dotenv.config({ path: localEnv });
+  } else {
+    dotenv.config();
+  }
+})();
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -25,9 +40,8 @@ app.post("/api/chat", async (req, res) => {
     const { message } = ChatRequestSchema.parse(req.body);
     await mcp.connect();
 
-    // Simple intent routing
-    let toolName: string | null = null;
-    let toolArgs: Record<string, unknown> = {};
+    let toolName = null;
+    let toolArgs = {};
 
     const skuMatch = message.match(/\b(?:sku|product)\s*[:#]?\s*([A-Za-z0-9_-]{3,})\b/i);
     const dealerMatch = message.match(/\bdealer\s*[:#]?\s*([A-Za-z0-9_-]{2,})\b/i);
@@ -51,7 +65,6 @@ app.post("/api/chat", async (req, res) => {
     } else if (/summary|analytics|overview|totals?/i.test(message)) {
       toolName = "summarizeCatalog";
     } else {
-      // Default try search with message text
       toolName = "searchProducts";
       toolArgs = { query: message, limit: 5 };
       if (dealerMatch) toolArgs.dealerId = dealerMatch[1];
@@ -83,8 +96,7 @@ app.post("/api/chat", async (req, res) => {
       data: toolResult,
       answer: text
     });
-  } catch (err: any) {
-    // eslint-disable-next-line no-console
+  } catch (err) {
     console.error("Chat error:", err);
     res.status(400).json({ ok: false, error: String(err?.message || err) });
   }
@@ -96,14 +108,11 @@ app.get("/health", (_req, res) => {
 
 const port = Number(process.env.PORT || 4000);
 app.listen(port, async () => {
-  // eslint-disable-next-line no-console
   console.log(`Middleware listening on http://localhost:${port}`);
   try {
     await mcp.connect();
-    // eslint-disable-next-line no-console
     console.log("Connected to MCP server.");
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error("Failed to connect MCP server:", e);
   }
 });
