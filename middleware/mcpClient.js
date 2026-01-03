@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export class OrgillMcpClient {
   constructor() {
@@ -17,6 +18,8 @@ export class OrgillMcpClient {
   }
 
   async _connectInternal() {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
     const repoRoot = path.resolve(__dirname, "..");
     const nodeBin = process.execPath;
     const serverEntry = path.resolve(repoRoot, "mcp/src/index.js");
@@ -43,17 +46,47 @@ export class OrgillMcpClient {
 
   async callTool(name, args = {}) {
     const client = this.ensure();
+    const debug = process.env.DEBUG_MCP === "1" || process.env.DEBUG_MCP === "true";
+    const startedAt = Date.now();
+    if (debug) {
+      try {
+        console.log(`[mcp] call ${name} args=${JSON.stringify(args)}`);
+      } catch {
+        console.log(`[mcp] call ${name} args=[unserializable]`);
+      }
+    }
     const res = await client.callTool({ name, arguments: args });
     if ("structuredContent" in res && res.structuredContent) {
+      if (debug) {
+        const elapsed = Date.now() - startedAt;
+        const sizeHint = Array.isArray(res.structuredContent?.results)
+          ? res.structuredContent.results.length
+          : Object.keys(res.structuredContent || {}).length;
+        console.log(`[mcp] ok ${name} elapsedMs=${elapsed} size=${sizeHint}`);
+      }
       return res.structuredContent;
     }
     const block = Array.isArray(res.content) ? res.content.find((c) => c.type === "text") : null;
     if (block?.text) {
       try {
-        return JSON.parse(block.text);
+        const parsed = JSON.parse(block.text);
+        if (debug) {
+          const elapsed = Date.now() - startedAt;
+          const sizeHint = Array.isArray(parsed?.results) ? parsed.results.length : Object.keys(parsed || {}).length;
+          console.log(`[mcp] ok ${name} elapsedMs=${elapsed} size=${sizeHint}`);
+        }
+        return parsed;
       } catch {
+        if (debug) {
+          const elapsed = Date.now() - startedAt;
+          console.log(`[mcp] ok ${name} elapsedMs=${elapsed} size=text`);
+        }
         return { content: block.text };
       }
+    }
+    if (debug) {
+      const elapsed = Date.now() - startedAt;
+      console.log(`[mcp] ok ${name} elapsedMs=${elapsed} size=unknown`);
     }
     return res;
   }
